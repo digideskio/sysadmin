@@ -60,7 +60,7 @@ check_running
 
 # local settings
 MYTEMPFILE=/tmp/mysql-reset-passwd.tmp.sql
-SYSPASSWD=/home/wstrucke/scripts/syspasswd.sh
+SYSPASSWD=../../syspasswd.sh
 
 # initialize variables
 INTERACTIVE=1
