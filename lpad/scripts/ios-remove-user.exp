@@ -1,0 +1,92 @@
+#!/usr/bin/expect --
+
+# set script variables
+log_user 0
+exp_internal 0
+set timeout -1
+
+# initialize local variables
+set auth_user "#AUTH_ID#"
+set auth_pass "#AUTH_PWD#"
+set device "#DEVICE#"
+set enable "#ENABLE#"
+set userid "#USERID#"
+
+# validate input
+if { $device == [concat "#" "DEVICE" "#"] } {send_user -- "Error: No arguments provided from LPAD!\n\n";exit 1}
+if { $device == "" } {send_user -- "Error: a device name is required!\n\n";exit 1}
+if { $userid == "" } {send_user -- "Error: a user name is required!\n\n";exit 1}
+if { "$userid" == "enable" } {send_user -- "Error: invalid user name!\n\n";exit 1}
+
+# set internal vars after input collection
+match_max 100000
+set timeout 5
+
+# start ssh to the specified device
+spawn ssh -l $auth_user $device
+
+expect {
+	-regexp "(P|p)assword: " {send -- "$auth_pass\r"}
+	timeout {send_user "Connection timeout\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+expect {
+	-nocase "$device>" {send_user "Successfully authenticated as $auth_user\n"}
+	timeout {send_user "Bad user name or password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+send -- "en\r"
+expect "Password: "
+send -- "$enable\r"
+expect {
+	-nocase "$device#" {send_user "Successfully elevated to root\n"}
+	timeout {send_user "Bad enable password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+send -- "term len 0\r"
+expect -nocase "$device#"
+set timeout 10
+
+send_user "Verifying Account...\n"
+send -- "show running-config\r"
+expect {
+	-nocase "username $userid " {}
+	-nocase "$device#" {send_user -- "Error: Account '$userid' not found!\n";exit}
+	timeout {send_user -- "Error: Timeout looking up '$userid' account!\n";exit}
+	eof {send_user -- "Connection closed by device\n";exit}
+}
+
+expect -nocase "$device#"
+send_user "Executing...\n"
+send -- "conf t\r"
+expect {
+	-nocase "$device\(config\)#" {}
+	timeout {send_user -- "Error accessing configuration mode\n";exit}
+	eof {send_user -- "Connection closed by device\n";exit}
+}
+
+send_user "Deleting '$userid' account...\n"
+send -- "no username $userid\r"
+
+expect {
+	-nocase "$device\(config\)#" {}
+	timeout {send_user -- "Error accessing configuration mode\n";exit}
+	eof {send_user -- "Connection closed by device\n";exit}
+}
+
+send_user "Saving configuration...\n"
+send -- "exit\r"
+expect -nocase "$device#"
+send -- "copy running-config startup-config"
+expect "Destination filename \[startup-config\]?"
+send -- "\r"
+expect "Building configuration..."
+expect -nocase "$device#"
+
+# all done
+send -- "quit\r"
+expect eof
+send_user -- "Account deleted successfully\n"

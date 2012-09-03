@@ -1,0 +1,118 @@
+#!/usr/bin/expect --
+
+proc usage {} {
+	global argv0
+	send_user -- "Usage: $argv0 \[--device\] device-name \[--command\] \"command-string\"\n\n"
+	send_user -- "  device-name      the device to contact (--device qualifier is optional)\n"
+	send_user -- "  command-string   a single command to execute (--command qualifier is optional)\n"
+	send_user -- "                   this optional can be provided multiple times\n\n"
+	exit 1
+}
+
+# set script variables
+log_user 0
+exp_internal 0
+set timeout -1
+
+# initialize local variables
+set buf ""
+set command [list]
+set device ""
+set interactive 1
+
+# parse lpad args
+if { [llength $argv] == 0 } {
+	set device "#DEVICE#"
+	set userid "#USERID#"
+	set pass "#PASSWD#"
+	set enable "#ENABLE#"
+	set command [split "#COMMAND#" "%"]
+	set interactive 0
+}
+
+# parse shell arguments
+while { [llength $argv] > 0 } {
+	set arg [lindex $argv 0]; set argv [lreplace $argv 0 0]
+	switch -- $arg {
+		--command {lappend command [lindex $argv 0]; set argv [lreplace $argv 0 0]}
+		--device {set device [lindex $argv 0]; set argv [lreplace $argv 0 0]}
+		--help {usage}
+		default {
+			if { $device == "" } {set device $arg
+			} else {lappend command $arg}
+		}
+	}
+}
+
+# validate input
+if { $device == [concat "#" "DEVICE" "#"] } {send_user -- "Error: No arguments provided from LPAD!\n\n";usage}
+if { $device == "" } {send_user -- "Error: a device name is required!\n\n";usage}
+if { [llength $command] == 0 } {send_user -- "Error: a command is required!\n\n";usage}
+
+# interactive if not lpad
+if { $interactive != 0 } {
+	send_user -- "User Name: "
+	expect_user -re "(.*)\n"
+	set userid $expect_out(1,string)
+
+	stty -echo
+	send_user -- "Password: "
+	expect_user -re "(.*)\n"
+	send_user "\n"
+	stty echo
+	set pass $expect_out(1,string)
+
+	stty -echo
+	send_user -- "Enable Password: "
+	expect_user -re "(.*)\n"
+	send_user "\n"
+	stty echo
+	set enable $expect_out(1,string)
+}
+
+# set internal vars after input collection
+match_max 100000
+set timeout 5
+
+# start ssh to the specified device
+spawn ssh -l $userid $device
+
+expect {
+	-regexp "(P|p)assword: " {send -- "$pass\r"}
+	timeout {send_user "Connection timeout\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+expect {
+	-nocase "$device>" {send_user "Successfully authenticated as $userid\n"}
+	timeout {send_user "Bad user name or password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+send -- "en\r"
+expect "Password: "
+send -- "$enable\r"
+expect {
+	-nocase "$device#" {send_user "Successfully elevated to root\n"}
+	timeout {send_user "Bad enable password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+send -- "term len 0\r"
+expect -nocase "$device#"
+send_user "Executing...\n"
+set timeout 5
+for {set i 0} {$i < [llength $command]} {incr i} {
+	send -- "[lindex $command $i]\r"
+	# capture the output
+	expect {
+		-nocase "end\r\r$device#" {}
+		-re "(.*)\r" {set buf "${buf}$expect_out(1,string)";exp_continue}
+	}
+}
+
+# all done
+send -- "quit\r"
+expect eof
+send_user -- "Received:\n"
+send_user -- "$buf\n\n"

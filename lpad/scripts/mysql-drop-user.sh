@@ -1,0 +1,1 @@
+../../mysql-drop-user.sh

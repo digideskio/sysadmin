@@ -1,0 +1,1 @@
+../../mysql-reset-passwd.sh

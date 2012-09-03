@@ -1,0 +1,154 @@
+#!/usr/bin/expect --
+
+proc usage {} {
+	global argv0
+	send_user -- "Usage: $argv0 \[--device\] device-name \[--file\] \[file-name\] \[--diff initials\]\n\n"
+	send_user -- "  device-name      the device to contact (--device qualifier is optional)\n"
+	send_user -- "  file-name        optional file to output to (--file qualifier is optional)\n"
+	send_user -- "  --diff initials  move the existing file out of the way and perform a diff using the provided initials\n\n"
+	exit 1
+}
+
+# set script variables
+log_user 0
+exp_internal 0
+set timeout -1
+
+# initialize local variables
+set buf ""
+set device ""
+set diff 0
+set filename ""
+set interactive 1
+
+# parse lpad args
+if { [llength $argv] == 0 } {
+	set device "#DEVICE#"
+	set filename "#FILENAME#"
+	set userid "#USERID#"
+	set pass "#PASSWD#"
+	set enable "#ENABLE#"
+	set diff #DIFF#
+	set initials "#INITIALS#"
+	set interactive 0
+}
+
+# parse shell arguments
+while { [llength $argv] > 0 } {
+	set arg [lindex $argv 0]; set argv [lreplace $argv 0 0]
+	switch -- $arg {
+		--device {set device [lindex $argv 0]; set argv [lreplace $argv 0 0]}
+		--diff {set diff 1; set initials [lindex $argv 0]; set argv [lreplace $argv 0 0]}
+		--file {set filename [lindex $argv 0]; set argv [lreplace $argv 0 0]}
+		--help {usage}
+		default {
+			if { $device == "" } {set device $arg
+			} elseif { $filename == "" } {set filename $arg
+			} else {usage}
+		}
+	}
+}
+
+# validate input
+if { $device == "" } {send_user -- "Error: a device name is required!\n\n";usage}
+if { $diff != 1 } {set diff 0}
+if { $diff == 1 && $initials == "" } {usage}
+if { $filename != "" } {
+	if { [file exists $filename] && $diff != 1 } {
+		send_user -- "Error: the file already exists!\n\n"
+		usage
+	}
+}
+
+# interactive if not lpad
+if { $interactive != 0 } {
+	send_user -- "User Name: "
+	expect_user -re "(.*)\n"
+	set userid $expect_out(1,string)
+
+	stty -echo
+	send_user -- "Password: "
+	expect_user -re "(.*)\n"
+	send_user "\n"
+	stty echo
+	set pass $expect_out(1,string)
+
+	stty -echo
+	send_user -- "Enable Password: "
+	expect_user -re "(.*)\n"
+	send_user "\n"
+	stty echo
+	set enable $expect_out(1,string)
+}
+
+# set internal vars after input collection
+match_max 100000
+set timeout 5
+
+# start ssh to the specified device
+spawn ssh -l $userid $device
+
+expect {
+	-regexp "(P|p)assword: " {send -- "$pass\r"}
+	timeout {send_user "Connection timeout\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+expect {
+	-nocase "$device>" {send_user "Successfully authenticated as $userid\n"}
+	timeout {send_user "Bad user name or password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+send -- "en\r"
+expect "Password: "
+send -- "$enable\r"
+expect {
+	-nocase "$device#" {send_user "Successfully elevated to root\n"}
+	timeout {send_user "Bad enable password\n";exit}
+	eof {send_user "Connection closed by device\n";exit}
+}
+
+# open the file for output
+if { $filename != "" } {
+	if { $diff == 1 } {
+		if { [file exists $filename.$initials] } {exec /bin/rm $filename.$initials}
+		exec /bin/cp $filename $filename.$initials
+		exec /bin/rm $filename
+	}
+	set ::configfile [open $filename w]
+}
+
+send -- "term len 0\r"
+expect -nocase "$device#"
+send_user "Building configuration...\n"
+send -- "show running-config\r"
+set timeout 5
+
+# ignore the initial lines of output and capture the rest
+expect {
+	-nocase "end\r\r$device#" {}
+	-re "(Current configuration : \[0-9\]* bytes|Building configuration...|show running-config)\r" {exp_continue}
+	-re "^\[ \]*\r" {exp_continue}
+	-re "(.*)\r" {set buf "${buf}$expect_out(1,string)";exp_continue}
+}
+send -- "quit\r"
+expect eof
+
+# write to file or output
+if { $filename != "" } {
+	puts $::configfile $buf
+	close $::configfile
+	spawn /usr/bin/dos2unix -q $filename
+	expect eof
+	send_user -- "Successfully wrote [string length $buf] bytes to file '$filename'\n\n"
+	if { $diff == 1 } {
+		send_user -- "diff $filename\{.$initials,\}\n"
+		log_user 1
+		exec -- >&@stdout /bin/bash -c "/usr/bin/diff $filename.$initials $filename ||:"
+		log_user 0
+	}
+	send_user -- "\n"
+} else {
+	send_user "Got Config:\n$buf"
+}
