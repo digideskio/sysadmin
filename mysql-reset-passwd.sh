@@ -60,7 +60,7 @@ check_running
 
 # local settings
 MYTEMPFILE=/tmp/mysql-reset-passwd.tmp.sql
-SYSPASSWD=../../syspasswd.sh
+SYSPASSWD=syspasswd.sh
 
 # initialize variables
 INTERACTIVE=1
@@ -103,7 +103,7 @@ fi
 # get the password as needed
 if [ $INTERACTIVE -eq 1 ]; then
   source $SYSPASSWD
-  if [ "`hostname`" == "db-01" ]; then PHASH=${PMYSQL_OLD}; else PHASH=${PMYSQL}; fi
+  if [ "`hostname`" == "example" ]; then PHASH=${PMYSQL_OLD}; else PHASH=${PMYSQL}; fi
 fi
 
 # make sure the password is sane
