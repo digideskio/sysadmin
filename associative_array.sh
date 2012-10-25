@@ -28,22 +28,44 @@
 #     VAL=$( kv arg1 arg2 )
 #     if [ $( kv ...
 #
+#   display array keys:
+#     kv
+#
+#   set a key/value:
+#     kv KEY VAL
+#
+#   retrieve a value:
+#     kv KEY
+#
 #   create an alias like so
 #     alias KVSTORE='kv'
 #
 function kv {
   # magic :)
   __LN=$( caller 0 |awk '{print $1}' )
-  __VAR=$( head -n${__LN} $0 |tail -n1 |sed 's/if\ \[\ //' |perl -pe 's/(?:[^\(\`]*[\(\`]?)?? ?([^\ \t(\`=]*)( |\n).*/\1/' )
+  __VOPT=(); __VOPT[0]='kv'; __VAR=""
+  echo -n "" |sed -r 's/^//' >/dev/null 2>&1 && SED='sed -r' || SED='sed -E'
+  for __V in $( grep -iE "^[^#](.*[[:space:]]*)?a?lias[[:space:]].*=['\"]?kv['\"]?([[:space:]]|$)" $BASH_SOURCE |$SED 's/.*alias ([^=]*)=.*/\1/' ); do
+    __VOPT[${#__VOPT[@]}]=$__V; done
+  __VSEL=$( head -n${__LN} $0 |tail -n1 )
+  for ((__V=0;__V<${#__VOPT[@]};__V++)); do echo "$__VSEL" |grep -qE "(^|\t| )${__VOPT[$__V]}(\t| |$)"; test $? -eq 0 && __VAR=${__VOPT[$__V]}; done
   __KVK="__${__VAR}_K"; __KVV="__${__VAR}_V"
   # __KVK/KVV is now a custom array store for the name of the variable this function was aliased to
-  test $# -eq 0 && return || test -z ${!__KVK} && typeset -ax ${!__KVK} ${!__KVV}
+  test -z ${!__KVK} && typeset -ax ${!__KVK} ${!__KVV}
+  # no arguments, return all keys
+  if [ $# -eq 0 ]; then
+    eval __C=\${#${__KVK}[@]}
+    for (( __i=0;__i<$__C;__i++ )); do eval __V="\${${__KVK}[$__i]}"; echo "$__V"; done
+    return
+  fi
   if [ $# -eq 1 ]; then
+    # one argument, return one key
     eval __C=\${#${__KVK}[@]}
     for (( __i=0;__i<$__C;__i++ )); do eval __V="\${${__KVK}[$__i]}"
       if [ "$__V" == "$1" ]; then eval __V="\${${__KVV}[$__i]}"; echo "$__V"; return; fi
     done
   else
+    # two arguments, set a key
     eval __C=\${#${__KVK}[@]}
     for (( __i=0;__i<$__C;__i++ )); do eval __V="\${${__KVK}[$__i]}"
       if [ "$__V" == "$1" ]; then eval ${__KVV}[$__i]=\"$2\"; return; fi
