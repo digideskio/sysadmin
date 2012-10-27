@@ -3,7 +3,7 @@
 # generate linux system passwords from stdin
 #
 # w. strucke 2011-12-07
-# Copyright 2012
+# Copyright 2011
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

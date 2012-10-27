@@ -5,7 +5,7 @@
 #
 # version 1.0.0, wstrucke
 # oct-11-2011
-# Copyright 2012
+# Copyright 2011
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
