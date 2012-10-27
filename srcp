@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Secure Remote Copy
+# copy files between two remote machines using the current host as the intermediary
+# accepts same arguments as scp
+#
+# Future Notes:
+# * do not store locally, pipe over ssh or netcat or something
+#
+# William Strucke, 2012-10-27
+# Copyright 2012
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+function cleanup_and_exit {
+  test -d /tmp/srcp.$$ && rm -rf /tmp/srcp.$$
+}
+
+function usage {
+  echo -e "Usage: $0 [-12346BCpqrv] [-c cipher] [-F ssh_config] [-i identity_file]
+           [-l limit] [-o ssh_option] [-P port] [-S program]
+           [[user@]host1:]file1 ... [[user@]host2:]file2" >&2 && exit 1
+}
+
+# exit cleanly
+trap cleanup_and_exit EXIT INT
+
+# init variables
+ARGS=""
+SRC=""
+DEST=""
+QUIET=0
+
+# identify the scp arguments and the source and destination machines
+while [ $1 ]; do case $1 in
+  -c|-F|-i|-l|-o|-P|-S) ARGS="$ARGS $1 $2"; shift;;
+  -q) QUIET=1; ARGS="$ARGS -q";;
+  -v) QUIET=0; ARGS="$ARGS -v";;
+  -*) ARGS="$ARGS $1";;
+  *) test -z "$SRC" && SRC="$1" || DEST="$1";;
+esac; shift; done
+
+# strip any trailing space from args
+ARGS=${ARGS//^ /}
+
+# validate input (scp will do most of the validation for us)
+test -z "$SRC" && usage
+test -z "$DEST" && usage
+
+# validate commands
+test `which scp mkdir |wc -l` -eq 2 || exit 2
+
+mkdir /tmp/srcp.$$ || exit 2
+test $QUIET -eq 0 && echo "Transferring from source..."
+scp $ARGS $SRC /tmp/srcp.$$/
+ES=$?
+test $ES -eq 0 || exit $ES
+
+test $QUIET -eq 0 && echo "Sending to destination..."
+scp $ARGS /tmp/srcp.$$/* $DEST
+
+exit 0
