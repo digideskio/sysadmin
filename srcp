@@ -70,5 +70,5 @@ test $ES -eq 0 || exit $ES
 
 test $QUIET -eq 0 && echo "Sending to destination..."
 scp $ARGS /tmp/srcp.$$/* $DEST
-
-exit 0
+ES=$?
+exit $ES
