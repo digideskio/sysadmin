@@ -25,12 +25,12 @@
 #
 
 function cleanup_and_exit {
-  test -d /tmp/srcp.$$ && rm -rf /tmp/srcp.$$
+  test -d $TEMP/srcp.$$ && rm -rf $TEMP/srcp.$$
 }
 
 function usage {
   echo -e "Usage: $0 [-12346BCpqrv] [-c cipher] [-F ssh_config] [-i identity_file]
-           [-l limit] [-o ssh_option] [-P port] [-S program]
+           [-l limit] [-o ssh_option] [-P port] [-S program] [-t temp_folder]
            [[user@]host1:]file1 ... [[user@]host2:]file2" >&2 && exit 1
 }
 
@@ -41,6 +41,7 @@ trap cleanup_and_exit EXIT INT
 ARGS=""
 SRC=""
 DEST=""
+TEMP="/tmp"
 QUIET=0
 
 # identify the scp arguments and the source and destination machines
@@ -48,27 +49,34 @@ while [ $1 ]; do case $1 in
   -c|-F|-i|-l|-o|-P|-S) ARGS="$ARGS $1 $2"; shift;;
   -q) QUIET=1; ARGS="$ARGS -q";;
   -v) QUIET=0; ARGS="$ARGS -v";;
+  -t) TEMP="$2"; shift;;
   -*) ARGS="$ARGS $1";;
   *) test -z "$SRC" && SRC="$1" || DEST="$1";;
 esac; shift; done
 
 # strip any trailing space from args
 ARGS=${ARGS//^ /}
+TEMP=${TEMP//\/$/}
 
 # validate input (scp will do most of the validation for us)
 test -z "$SRC" && usage
 test -z "$DEST" && usage
+test -d $TEMP || usage
 
 # validate commands
 test `which scp mkdir |wc -l` -eq 2 || exit 2
 
-mkdir /tmp/srcp.$$ || exit 2
+# fix support for transferring hidden files
+# Re: http://stackoverflow.com/questions/2135770/bash-for-loop-with-wildcards-and-hidden-files
+shopt -s dotglob
+
+mkdir $TEMP/srcp.$$ || exit 2
 test $QUIET -eq 0 && echo "Transferring from source..."
-scp $ARGS $SRC /tmp/srcp.$$/
+scp $ARGS $SRC $TEMP/srcp.$$/
 ES=$?
 test $ES -eq 0 || exit $ES
 
 test $QUIET -eq 0 && echo "Sending to destination..."
-scp $ARGS /tmp/srcp.$$/* $DEST
-ES=$?
-exit $ES
+scp $ARGS $TEMP/srcp.$$/* $DEST
+
+exit 0
